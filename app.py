@@ -2,11 +2,29 @@ import pandas as pd
 from fastapi import FastAPI, Query, HTTPException
 from enum import Enum
 import os
+import joblib
+from contextlib import asynccontextmanager
+from pydantic import BaseModel
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    model_path = os.getenv(
+        "MODEL_PATH",
+        "/app/ibm_attrition_model.joblib",
+    )
+
+    artifact = joblib.load(model_path)
+
+    app.state.classifier = artifact["model"]
+    app.state.feature_names = artifact["feature_names"]
+
+    yield
 
 app = FastAPI(
     title="IBM HR API",
     description="An API for exploring IBM HR data.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 DATA_URL = (
@@ -141,4 +159,42 @@ def health():
     return {
         "status": "ok",
         "environment": os.getenv("APP_ENV", "local"),
+    }
+
+class AttritionInput(BaseModel):
+    features: dict[str, float | str]
+
+
+@app.post("/predict-attrition", tags=["Prediction"])
+def predict_attrition(payload: AttritionInput):
+    """Prédit l'attrition à partir des caractéristiques d'un employé."""
+    feature_names = app.state.feature_names
+
+    missing = [
+        name for name in feature_names
+        if name not in payload.features
+    ]
+
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={"missing_features": missing},
+        )
+
+    # Respecter les colonnes et leur ordre lors de l'entraînement.
+    employee = pd.DataFrame(
+        [payload.features],
+        columns=feature_names,
+    )
+
+    try:
+        prediction = app.state.classifier.predict(employee)[0]
+    except (ValueError, TypeError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail=str(error),
+        ) from error
+
+    return {
+        "Attrition": "Yes" if int(prediction) == 1 else "No"
     }

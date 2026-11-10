@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pandas
 openpyxl
+joblib
+scikit-learn==1.7.2
