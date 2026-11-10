@@ -1,6 +1,7 @@
 import pandas as pd
 from fastapi import FastAPI, Query, HTTPException
 from enum import Enum
+import os
 
 app = FastAPI(
     title="IBM HR API",
@@ -133,3 +134,11 @@ def quantile(
         result = df.loc[values <= threshold]
 
     return json.loads(result.to_json(orient="records"))
+
+@app.get("/health", tags=["Monitoring"])
+def health():
+    """Vérifie que l'API fonctionne et indique son environnement."""
+    return {
+        "status": "ok",
+        "environment": os.getenv("APP_ENV", "local"),
+    }
